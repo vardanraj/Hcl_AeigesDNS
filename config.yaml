@@ -1,0 +1,34 @@
+server:
+  host: 127.0.0.1
+  port: 8000
+  cors_origins:
+  - http://localhost:5173
+  - http://127.0.0.1:5173
+  - http://localhost:3000
+  max_upload_size_mb: 50
+thresholds:
+  entropy_threshold: 3.8
+  subdomain_length_threshold: 30
+  qname_length_threshold: 60
+  digit_ratio_threshold: 0.3
+  hex_ratio_threshold: 0.4
+  txt_ratio_threshold: 0.3
+  c2_jitter_threshold: 0.2
+  c2_min_queries: 5
+  exfil_cardinality_threshold: 15
+  exfil_bytes_threshold: 3000
+  ml_anomaly_threshold: 0.15
+  fused_threshold: 0.5
+weights:
+  rule_weight: 0.3
+  beacon_weight: 0.25
+  exfil_weight: 0.25
+  ml_weight: 0.2
+severity_levels:
+  critical: 80.0
+  high: 60.0
+  medium: 35.0
+  low: 0.0
+synthetic_data:
+  default_sample_size: 1000
+  labeled_synthetic: true

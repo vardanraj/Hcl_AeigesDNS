@@ -1,0 +1,46 @@
+# Environment & secrets
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+*.joblib
+*.pkl
+
+# Node / React
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+.npm
+
+# Agent & Scratch
+.agent/
+scratch/
+
+# Reports, Documents & Presentations (Ignored from repository)
+reports/
+*.pdf
+*.docx
+*.pptx
+*.ppt
+
+# Data & Temp files
+data/raw_pcaps/*
+!data/raw_pcaps/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
