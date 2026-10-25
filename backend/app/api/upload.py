@@ -4,14 +4,16 @@ Enforces 50 MB upload limits, validates PCAP magic bytes, extracts features,
 runs detection engines, and cleans up temporary files post-analysis.
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends
 from pathlib import Path
 import tempfile
 import os
 import shutil
 import time
+import uuid
 
 from backend.app.config import get_config
+from backend.app.core.session import verify_session_token
 from backend.app.ingest.pcap_parser import validate_pcap_magic_bytes, parse_pcap_file
 from backend.app.analytics.feature_extractor import extract_dns_features
 from backend.app.analytics.detectors import RuleBasedDetector
@@ -33,7 +35,7 @@ analysis_store = {
 }
 
 
-@router.post("/upload")
+@router.post("/upload", dependencies=[Depends(verify_session_token)])
 async def upload_pcap(file: UploadFile = File(...)):
     """Upload and analyze PCAP / PCAPNG packet capture file."""
     config = get_config()
@@ -50,7 +52,7 @@ async def upload_pcap(file: UploadFile = File(...)):
     # 2. Write temp file safely for analysis
     temp_dir = Path(tempfile.gettempdir()) / "aegisdns_uploads"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    temp_file_path = temp_dir / f"upload_{int(time.time())}_{file.filename}"
+    temp_file_path = temp_dir / f"upload_{int(time.time())}_{uuid.uuid4().hex}.pcap"
 
     try:
         with open(temp_file_path, "wb") as f:
@@ -64,7 +66,11 @@ async def upload_pcap(file: UploadFile = File(...)):
             )
 
         # 4. Parse PCAP packets
-        raw_records = parse_pcap_file(temp_file_path, is_synthetic=False)
+        try:
+            raw_records = parse_pcap_file(temp_file_path, is_synthetic=False)
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
+
         if not raw_records:
             raise HTTPException(
                 status_code=400,

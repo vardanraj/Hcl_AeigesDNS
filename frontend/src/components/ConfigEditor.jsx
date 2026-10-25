@@ -89,8 +89,8 @@ export default function ConfigEditor({ onConfigSaved, onError }) {
             <input
               type="number"
               step="0.1"
-              min="0"
-              max="8"
+              min="2"
+              max="5.5"
               value={thresholds.entropy_threshold}
               onChange={(e) => handleChange('entropy_threshold', e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
@@ -103,8 +103,8 @@ export default function ConfigEditor({ onConfigSaved, onError }) {
             </label>
             <input
               type="number"
-              min="1"
-              max="255"
+              min="10"
+              max="63"
               value={thresholds.subdomain_length_threshold}
               onChange={(e) => handleChange('subdomain_length_threshold', e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
@@ -117,8 +117,8 @@ export default function ConfigEditor({ onConfigSaved, onError }) {
             </label>
             <input
               type="number"
-              min="1"
-              max="253"
+              min="20"
+              max="200"
               value={thresholds.qname_length_threshold}
               onChange={(e) => handleChange('qname_length_threshold', e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
@@ -132,8 +132,8 @@ export default function ConfigEditor({ onConfigSaved, onError }) {
             <input
               type="number"
               step="0.05"
-              min="0"
-              max="1"
+              min="0.10"
+              max="0.80"
               value={thresholds.digit_ratio_threshold}
               onChange={(e) => handleChange('digit_ratio_threshold', e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
@@ -147,8 +147,8 @@ export default function ConfigEditor({ onConfigSaved, onError }) {
             <input
               type="number"
               step="0.05"
-              min="0"
-              max="1"
+              min="0.10"
+              max="0.85"
               value={thresholds.hex_ratio_threshold}
               onChange={(e) => handleChange('hex_ratio_threshold', e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
@@ -162,8 +162,8 @@ export default function ConfigEditor({ onConfigSaved, onError }) {
             <input
               type="number"
               step="0.05"
-              min="0"
-              max="1"
+              min="0.05"
+              max="0.75"
               value={thresholds.ml_anomaly_threshold}
               onChange={(e) => handleChange('ml_anomaly_threshold', e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
@@ -177,8 +177,8 @@ export default function ConfigEditor({ onConfigSaved, onError }) {
             <input
               type="number"
               step="0.05"
-              min="0"
-              max="1"
+              min="0.20"
+              max="0.85"
               value={thresholds.fused_threshold}
               onChange={(e) => handleChange('fused_threshold', e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"

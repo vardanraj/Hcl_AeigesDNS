@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ShieldAlert, Download, Search, Filter, ChevronRight, X, Terminal, CheckCircle2 } from 'lucide-react';
-import { getExportUrl } from '../api';
+import { getExportUrl, downloadExport } from '../api';
 
 export default function AlertsTable({ incidents }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,20 +88,20 @@ export default function AlertsTable({ incidents }) {
 
           {/* Export Buttons */}
           <div className="flex items-center gap-2">
-            <a
-              href={getExportUrl('csv')}
-              download="aegisdns_incidents.csv"
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium text-slate-200 flex items-center gap-1.5 transition-all"
+            <button
+              onClick={() => downloadExport('csv')}
+              type="button"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-cyan-400" /> CSV
-            </a>
-            <a
-              href={getExportUrl('json')}
-              download="aegisdns_incidents.json"
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium text-slate-200 flex items-center gap-1.5 transition-all"
+            </button>
+            <button
+              onClick={() => downloadExport('json')}
+              type="button"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-purple-400" /> JSON
-            </a>
+            </button>
           </div>
         </div>
       </div>

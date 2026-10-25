@@ -20,6 +20,8 @@ VALID_PCAP_MAGIC_BYTES = [
     b"\x0a\x0d\x0d\x0a",  # PCAPNG Block Header
 ]
 
+MAX_PARSE_PACKETS = 50000
+
 QTYPE_MAP = {
     1: "A",
     2: "NS",
@@ -72,6 +74,9 @@ def parse_pcap_file(file_path: Union[str, Path], is_synthetic: bool = True) -> L
         packets = rdpcap(str(path))
     except Exception as e:
         raise ValueError(f"Failed to read PCAP file with Scapy: {str(e)}")
+
+    if len(packets) > MAX_PARSE_PACKETS:
+        raise ValueError(f"PCAP packet count ({len(packets)}) exceeds maximum allowed limit of {MAX_PARSE_PACKETS} packets.")
 
     records: List[Dict[str, Any]] = []
 

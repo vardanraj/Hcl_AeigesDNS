@@ -21,11 +21,15 @@ export async function fetchSessionToken() {
 }
 
 export async function uploadPcapFile(file) {
+  if (!sessionToken) await fetchSessionToken();
   const formData = new FormData();
   formData.append("file", file);
 
   const res = await fetch(`${API_BASE}/api/pcap/upload`, {
     method: "POST",
+    headers: {
+      "X-AegisDNS-Token": sessionToken || "",
+    },
     body: formData,
   });
 
@@ -37,8 +41,12 @@ export async function uploadPcapFile(file) {
 }
 
 export async function generateSyntheticTraffic(numRecords = 200, tunnelRatio = 0.25) {
+  if (!sessionToken) await fetchSessionToken();
   const res = await fetch(`${API_BASE}/api/synthetic/generate?num_records=${numRecords}&tunnel_ratio=${tunnelRatio}`, {
     method: "POST",
+    headers: {
+      "X-AegisDNS-Token": sessionToken || "",
+    },
   });
   if (!res.ok) {
     throw new Error("Failed to generate synthetic data.");
@@ -161,4 +169,23 @@ export async function getEvaluationMetrics() {
 
 export function getExportUrl(format = "csv") {
   return `${API_BASE}/api/incidents/export?format=${format}`;
+}
+
+export async function downloadExport(format = "csv") {
+  if (!sessionToken) await fetchSessionToken();
+  const res = await fetch(`${API_BASE}/api/incidents/export?format=${format}`, {
+    headers: {
+      "X-AegisDNS-Token": sessionToken || "",
+    },
+  });
+  if (!res.ok) throw new Error("Failed to export incidents.");
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `aegisdns_incidents.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
 }

@@ -1,11 +1,13 @@
 """Incident alerts, investigation, summary, and export endpoints."""
 
-from fastapi import APIRouter, Query, Response, HTTPException
+from fastapi import APIRouter, Query, Response, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any
 import json
 import csv
 import io
+
+from backend.app.core.session import verify_session_token
 
 from backend.app.api.upload import analysis_store
 from backend.app.utils.synthetic_gen import generate_synthetic_dns_records
@@ -123,7 +125,17 @@ async def investigate_domain(domain: str):
     }
 
 
-@router.get("/incidents/export")
+def sanitize_csv_cell(value: Any) -> Any:
+    """Sanitize CSV cell to prevent formula injection (=, +, -, @, \\t, \\r)."""
+    if value is None:
+        return ""
+    val_str = str(value)
+    if val_str.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return f"'{val_str}"
+    return value
+
+
+@router.get("/incidents/export", dependencies=[Depends(verify_session_token)])
 async def export_incidents(format: str = Query("json", pattern="^(json|csv)$")):
     """Export incidents in JSON or CSV format for report download."""
     _ensure_active_dataset()
@@ -145,15 +157,15 @@ async def export_incidents(format: str = Query("json", pattern="^(json|csv)$")):
         ])
         for inc in incidents:
             writer.writerow([
-                inc.get("incident_id"),
-                inc.get("src_ip"),
-                inc.get("base_domain"),
-                inc.get("risk_score"),
-                inc.get("severity"),
-                "; ".join(inc.get("triggered_rules", [])),
-                inc.get("query_count"),
-                inc.get("recommended_action"),
-                inc.get("is_synthetic"),
+                sanitize_csv_cell(inc.get("incident_id")),
+                sanitize_csv_cell(inc.get("src_ip")),
+                sanitize_csv_cell(inc.get("base_domain")),
+                sanitize_csv_cell(inc.get("risk_score")),
+                sanitize_csv_cell(inc.get("severity")),
+                sanitize_csv_cell("; ".join(inc.get("triggered_rules", []))),
+                sanitize_csv_cell(inc.get("query_count")),
+                sanitize_csv_cell(inc.get("recommended_action")),
+                sanitize_csv_cell(inc.get("is_synthetic")),
             ])
         output.seek(0)
         return StreamingResponse(

@@ -16,18 +16,18 @@ CONFIG_VALIDATED_PATH = PROJECT_ROOT / "config.validated.yaml"
 
 
 class ThresholdsConfig(BaseModel):
-    entropy_threshold: float = Field(default=3.8, ge=0.0, le=8.0)
-    subdomain_length_threshold: int = Field(default=30, ge=1, le=255)
-    qname_length_threshold: int = Field(default=60, ge=1, le=253)
-    digit_ratio_threshold: float = Field(default=0.30, ge=0.0, le=1.0)
-    hex_ratio_threshold: float = Field(default=0.40, ge=0.0, le=1.0)
-    txt_ratio_threshold: float = Field(default=0.30, ge=0.0, le=1.0)
-    c2_jitter_threshold: float = Field(default=0.20, ge=0.01, le=1.0)
-    c2_min_queries: int = Field(default=5, ge=2, le=1000)
-    exfil_cardinality_threshold: int = Field(default=15, ge=1, le=10000)
-    exfil_bytes_threshold: int = Field(default=3000, ge=100, le=10000000)
-    ml_anomaly_threshold: float = Field(default=0.15, ge=0.0, le=1.0)
-    fused_threshold: float = Field(default=0.50, ge=0.0, le=1.0)
+    entropy_threshold: float = Field(default=3.8, ge=2.0, le=5.5)
+    subdomain_length_threshold: int = Field(default=30, ge=10, le=63)
+    qname_length_threshold: int = Field(default=60, ge=20, le=200)
+    digit_ratio_threshold: float = Field(default=0.30, ge=0.10, le=0.80)
+    hex_ratio_threshold: float = Field(default=0.40, ge=0.10, le=0.85)
+    txt_ratio_threshold: float = Field(default=0.30, ge=0.10, le=0.80)
+    c2_jitter_threshold: float = Field(default=0.20, ge=0.05, le=0.60)
+    c2_min_queries: int = Field(default=5, ge=3, le=100)
+    exfil_cardinality_threshold: int = Field(default=15, ge=5, le=200)
+    exfil_bytes_threshold: int = Field(default=3000, ge=500, le=50000)
+    ml_anomaly_threshold: float = Field(default=0.15, ge=0.05, le=0.75)
+    fused_threshold: float = Field(default=0.50, ge=0.20, le=0.85)
 
 
 class WeightsConfig(BaseModel):

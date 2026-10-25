@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Activity, Radio, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { fetchSessionToken } from '../api';
 
 export default function LiveMonitor({ onLiveIncidentReceived }) {
   const [messages, setMessages] = useState([]);
@@ -25,8 +26,16 @@ export default function LiveMonitor({ onLiveIncidentReceived }) {
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
 
-      socket.onopen = () => {
-        setWsStatus('connected');
+      socket.onopen = async () => {
+        try {
+          const token = await fetchSessionToken();
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ token: token || "" }));
+            setWsStatus('connected');
+          }
+        } catch (err) {
+          console.error("Failed to authenticate WebSocket:", err);
+        }
       };
 
       socket.onmessage = (event) => {

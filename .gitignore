@@ -34,6 +34,9 @@ reports/
 *.ppt
 
 # Data & Temp files
+alerts_benign.json
+*.pcap
+*.pcapng
 data/raw_pcaps/*
 !data/raw_pcaps/.gitkeep
 data/synthetic/*

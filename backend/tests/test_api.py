@@ -90,7 +90,8 @@ def test_config_reset_endpoint():
 
 
 def test_synthetic_generate_endpoint():
-    res = client.post("/api/synthetic/generate?num_records=50&tunnel_ratio=0.25")
+    token = client.get("/api/session").json()["token"]
+    res = client.post("/api/synthetic/generate?num_records=50&tunnel_ratio=0.25", headers={"X-AegisDNS-Token": token})
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "success"
@@ -98,7 +99,8 @@ def test_synthetic_generate_endpoint():
 
 
 def test_alerts_summary_timeline_investigate_endpoints():
-    client.post("/api/synthetic/generate?num_records=50")
+    token = client.get("/api/session").json()["token"]
+    client.post("/api/synthetic/generate?num_records=50", headers={"X-AegisDNS-Token": token})
 
     alerts_res = client.get("/api/alerts")
     assert alerts_res.status_code == 200
@@ -133,34 +135,45 @@ def test_adaptive_timeline_multiple_buckets():
 
 
 def test_incidents_export_json_and_csv():
-    client.post("/api/synthetic/generate?num_records=50")
+    token = client.get("/api/session").json()["token"]
+    headers = {"X-AegisDNS-Token": token}
+    client.post("/api/synthetic/generate?num_records=50", headers=headers)
 
-    json_res = client.get("/api/incidents/export?format=json")
+    json_res = client.get("/api/incidents/export?format=json", headers=headers)
     assert json_res.status_code == 200
     assert json_res.headers["content-type"].startswith("application/json")
 
-    csv_res = client.get("/api/incidents/export?format=csv")
+    csv_res = client.get("/api/incidents/export?format=csv", headers=headers)
     assert csv_res.status_code == 200
     assert csv_res.headers["content-type"].startswith("text/csv")
 
 
 def test_pcap_upload_non_pcap_header(tmp_path):
+    token = client.get("/api/session").json()["token"]
+    headers = {"X-AegisDNS-Token": token}
     invalid_file = tmp_path / "bad.pcap"
     invalid_file.write_bytes(b"INVALID_HEADER_DATA_123456789")
 
     with open(invalid_file, "rb") as f:
-        res = client.post("/api/pcap/upload", files={"file": ("bad.pcap", f, "application/octet-stream")})
+        res = client.post(
+            "/api/pcap/upload",
+            files={"file": ("bad.pcap", f, "application/octet-stream")},
+            headers=headers
+        )
 
     assert res.status_code == 400
     assert "Invalid file header" in res.json()["detail"]
 
 
 def test_pcap_upload_oversized():
+    token = client.get("/api/session").json()["token"]
+    headers = {"X-AegisDNS-Token": token}
     huge_bytes = b"X" * (50 * 1024 * 1024 + 1024)
 
     res = client.post(
         "/api/pcap/upload",
-        files={"file": ("huge.pcap", huge_bytes, "application/octet-stream")}
+        files={"file": ("huge.pcap", huge_bytes, "application/octet-stream")},
+        headers=headers
     )
 
     assert res.status_code == 413
@@ -168,11 +181,17 @@ def test_pcap_upload_oversized():
 
 
 def test_pcap_upload_valid_synthetic(tmp_path):
+    token = client.get("/api/session").json()["token"]
+    headers = {"X-AegisDNS-Token": token}
     valid_pcap = tmp_path / "valid.pcap"
     generate_synthetic_pcap(valid_pcap, num_records=30)
 
     with open(valid_pcap, "rb") as f:
-        res = client.post("/api/pcap/upload", files={"file": ("valid.pcap", f, "application/octet-stream")})
+        res = client.post(
+            "/api/pcap/upload",
+            files={"file": ("valid.pcap", f, "application/octet-stream")},
+            headers=headers
+        )
 
     assert res.status_code == 200
     data = res.json()
@@ -183,20 +202,31 @@ def test_pcap_upload_valid_synthetic(tmp_path):
 
 
 def test_websocket_origin_validation():
-    """Verify WebSocket /ws/live origin validation allowed vs disallowed headers."""
-    # Allowed origin
+    """Verify WebSocket /ws/live origin validation allowed vs disallowed vs missing."""
+    token = client.get("/api/session").json()["token"]
+
+    # Allowed origin with token auth succeeds
     with client.websocket_connect("/ws/live", headers={"Origin": "http://localhost:5173"}) as ws:
+        ws.send_json({"token": token})
         ws.send_text("ping")
 
     # Disallowed origin -> closed with code 1008
     with pytest.raises(Exception):
         with client.websocket_connect("/ws/live", headers={"Origin": "http://malicious-domain.com"}) as ws:
-            ws.receive_text()
+            ws.send_json({"token": token})
+
+    # Missing origin -> closed with code 1008
+    with pytest.raises(Exception):
+        with client.websocket_connect("/ws/live") as ws:
+            ws.send_json({"token": token})
 
 
 def test_live_incident_push_to_websocket():
     """Verify injecting live packets pushes detected incidents directly to /ws/live clients."""
-    with client.websocket_connect("/ws/live") as ws:
+    token = client.get("/api/session").json()["token"]
+    with client.websocket_connect("/ws/live", headers={"Origin": "http://localhost:5173"}) as ws:
+        ws.send_json({"token": token})
+
         # Generate 10 synthetic tunneled packet records
         synth_recs = generate_synthetic_dns_records(num_records=12, tunnel_ratio=0.80)
 
@@ -234,3 +264,79 @@ def test_live_capture_start_when_npcap_missing():
         res = client.post("/api/capture/start", json={"interface": "default"}, headers=headers)
         assert res.status_code == 400
         assert "Npcap" in res.json()["detail"] or "Failed" in res.json()["detail"]
+
+
+# ==============================================================================
+# Security Tests
+# ==============================================================================
+
+def test_security_missing_token_on_upload_returns_401(tmp_path):
+    """Verify POST /api/pcap/upload without X-AegisDNS-Token returns 401."""
+    dummy_file = tmp_path / "dummy.pcap"
+    dummy_file.write_bytes(b"\xa1\xb2\xc3\xd4" + b"\x00" * 30)
+    with open(dummy_file, "rb") as f:
+        res = client.post("/api/pcap/upload", files={"file": ("dummy.pcap", f, "application/octet-stream")})
+    assert res.status_code == 401
+    assert "Invalid or missing session token" in res.json()["detail"]
+
+
+def test_security_missing_token_on_synthetic_generate_returns_401():
+    """Verify POST /api/synthetic/generate without X-AegisDNS-Token returns 401."""
+    res = client.post("/api/synthetic/generate?num_records=10")
+    assert res.status_code == 401
+    assert "Invalid or missing session token" in res.json()["detail"]
+
+
+def test_security_missing_token_on_export_returns_401():
+    """Verify GET /api/incidents/export without X-AegisDNS-Token returns 401."""
+    res = client.get("/api/incidents/export?format=csv")
+    assert res.status_code == 401
+    assert "Invalid or missing session token" in res.json()["detail"]
+
+
+def test_security_websocket_invalid_token_rejected():
+    """Verify /ws/live closes connection when supplied token is invalid."""
+    with pytest.raises(Exception):
+        with client.websocket_connect("/ws/live", headers={"Origin": "http://localhost:5173"}) as ws:
+            ws.send_json({"token": "WRONG_TOKEN_VALUE_XYZ"})
+            ws.receive_text()
+
+
+def test_security_upload_path_traversal_filename_safe(tmp_path):
+    """Verify filenames with path traversal characters do not write outside the upload directory."""
+    token = client.get("/api/session").json()["token"]
+    headers = {"X-AegisDNS-Token": token}
+    valid_pcap = tmp_path / "trav_test.pcap"
+    generate_synthetic_pcap(valid_pcap, num_records=10)
+
+    with open(valid_pcap, "rb") as f:
+        res = client.post(
+            "/api/pcap/upload",
+            files={"file": ("../../escape_attempt.pcap", f, "application/octet-stream")},
+            headers=headers
+        )
+    assert res.status_code == 200
+    assert not (tmp_path.parent / "escape_attempt.pcap").exists()
+
+
+def test_security_csv_export_sanitizes_formula_injection():
+    """Verify sanitize_csv_cell escapes =, +, -, @, \\t, \\r to prevent spreadsheet formula injection."""
+    from backend.app.api.alerts import sanitize_csv_cell
+    assert sanitize_csv_cell("=CMD|' /C calc'!A0") == "'=CMD|' /C calc'!A0"
+    assert sanitize_csv_cell("+12345") == "'+12345"
+    assert sanitize_csv_cell("-SOMEPAYLOAD") == "'-SOMEPAYLOAD"
+    assert sanitize_csv_cell("@SUM(1,2)") == "'@SUM(1,2)"
+    assert sanitize_csv_cell("regular_domain.com") == "regular_domain.com"
+    assert sanitize_csv_cell(123) == 123
+
+
+def test_security_pcap_max_packets_exceeded_error():
+    """Verify PCAP exceeding MAX_PARSE_PACKETS raises clear ValueError."""
+    from backend.app.ingest.pcap_parser import parse_pcap_file, MAX_PARSE_PACKETS
+    with patch("backend.app.ingest.pcap_parser.rdpcap") as mock_rdpcap:
+        mock_rdpcap.return_value = [None] * (MAX_PARSE_PACKETS + 1)
+        with patch("backend.app.ingest.pcap_parser.validate_pcap_magic_bytes", return_value=True):
+            with pytest.raises(ValueError) as exc:
+                parse_pcap_file("dummy_path.pcap")
+            assert "exceeds maximum allowed limit" in str(exc.value)
+

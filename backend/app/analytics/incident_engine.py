@@ -21,7 +21,7 @@ class IncidentEngine:
     def generate_incident_id(self, src_ip: str, base_domain: str) -> str:
         """Create a deterministic unique incident ID string."""
         raw = f"{src_ip}:{base_domain}"
-        digest = hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
+        digest = hashlib.md5(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
         return f"INC-{digest.upper()}"
 
     def derive_recommended_action(self, triggered_rules: List[str], src_ip: str, base_domain: str) -> str:

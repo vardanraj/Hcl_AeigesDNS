@@ -1,6 +1,7 @@
 """Session manager for AegisDNS providing per-run session token authentication."""
 
 import uuid
+import secrets
 from typing import Optional
 from fastapi import Header, HTTPException, status, APIRouter
 
@@ -17,7 +18,7 @@ def get_session_token() -> str:
 
 def verify_session_token(x_aegisdns_token: Optional[str] = Header(None, alias="X-AegisDNS-Token")):
     """FastAPI dependency enforcing valid X-AegisDNS-Token header for sensitive control actions."""
-    if not x_aegisdns_token or x_aegisdns_token != SERVER_SESSION_TOKEN:
+    if not x_aegisdns_token or not secrets.compare_digest(x_aegisdns_token, SERVER_SESSION_TOKEN):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing session token in X-AegisDNS-Token header."

@@ -1,6 +1,7 @@
 """Synthetic dataset generator API endpoint."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from backend.app.core.session import verify_session_token
 from backend.app.utils.synthetic_gen import generate_synthetic_dns_records
 from backend.app.analytics.feature_extractor import extract_dns_features
 from backend.app.analytics.detectors import RuleBasedDetector
@@ -14,7 +15,7 @@ from backend.app.config import get_config
 router = APIRouter(prefix="/api/synthetic", tags=["synthetic"])
 
 
-@router.post("/generate")
+@router.post("/generate", dependencies=[Depends(verify_session_token)])
 async def generate_synthetic_traffic(num_records: int = 200, tunnel_ratio: float = 0.25):
     """Trigger generation of synthetic benign and tunneled DNS queries."""
     config = get_config()
