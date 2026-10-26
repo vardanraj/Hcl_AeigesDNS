@@ -340,3 +340,110 @@ def test_security_pcap_max_packets_exceeded_error():
                 parse_pcap_file("dummy_path.pcap")
             assert "exceeds maximum allowed limit" in str(exc.value)
 
+
+
+# ==============================================================================
+# Data lifecycle / consistency tests
+# ==============================================================================
+
+def test_empty_store_returns_empty_results():
+    """Verify summary/alerts/timeline return empty/zero state on an empty store."""
+    token = client.get("/api/session").json()["token"]
+    # Clear the store first
+    clear_res = client.post("/api/data/clear", headers={"X-AegisDNS-Token": token})
+    assert clear_res.status_code == 200
+
+    sum_res = client.get("/api/summary")
+    assert sum_res.status_code == 200
+    s = sum_res.json()
+    assert s["total_queries"] == 0
+    assert s["total_incidents"] == 0
+
+    alerts_res = client.get("/api/alerts")
+    assert alerts_res.status_code == 200
+    assert alerts_res.json()["incidents"] == []
+    assert alerts_res.json()["count"] == 0
+
+    timeline_res = client.get("/api/timeline")
+    assert timeline_res.status_code == 200
+    assert timeline_res.json() == []
+
+
+def test_clear_endpoint_requires_token():
+    """Verify POST /api/data/clear returns 401 without token."""
+    res = client.post("/api/data/clear")
+    assert res.status_code == 401
+    assert "Invalid or missing session token" in res.json()["detail"]
+
+
+def test_clear_endpoint_empties_store():
+    """Verify POST /api/data/clear resets all store fields."""
+    token = client.get("/api/session").json()["token"]
+    headers = {"X-AegisDNS-Token": token}
+
+    # Seed some data
+    client.post("/api/synthetic/generate?num_records=30", headers=headers)
+
+    # Confirm data exists
+    sum_before = client.get("/api/summary").json()
+    assert sum_before["total_queries"] > 0
+
+    # Clear
+    clear_res = client.post("/api/data/clear", headers=headers)
+    assert clear_res.status_code == 200
+    assert clear_res.json()["status"] == "cleared"
+
+    # Confirm empty after clear
+    sum_after = client.get("/api/summary").json()
+    assert sum_after["total_queries"] == 0
+    assert sum_after["total_incidents"] == 0
+    alerts_after = client.get("/api/alerts").json()
+    assert alerts_after["incidents"] == []
+
+
+def test_synthetic_generate_updates_timeline():
+    """Verify Generate Synthetic Traffic also writes analysis_store['timeline']."""
+    token = client.get("/api/session").json()["token"]
+    headers = {"X-AegisDNS-Token": token}
+
+    # Clear first
+    client.post("/api/data/clear", headers=headers)
+
+    # Generate synthetic data
+    res = client.post("/api/synthetic/generate?num_records=100", headers=headers)
+    assert res.status_code == 200
+
+    # Verify timeline is non-empty
+    timeline_res = client.get("/api/timeline")
+    assert timeline_res.status_code == 200
+    timeline = timeline_res.json()
+    assert len(timeline) > 0, "Timeline should be non-empty after synthetic generate"
+    # Each point must have the required fields
+    for pt in timeline:
+        assert "timestamp" in pt
+        assert "total_queries" in pt
+        assert "anomalous_queries" in pt
+
+
+def test_live_records_appear_in_summary():
+    """Verify live packet callback updates analysis_store summary with is_synthetic=False."""
+    from backend.app.api.capture import _live_packet_callback, _store_lock
+    from backend.app.api.upload import analysis_store as store
+
+    token = client.get("/api/session").json()["token"]
+    headers = {"X-AegisDNS-Token": token}
+
+    # Clear store
+    client.post("/api/data/clear", headers=headers)
+
+    # Feed a batch of 12 synthetic records through the live callback
+    synth_recs = generate_synthetic_dns_records(num_records=12, tunnel_ratio=0.80)
+    for r in synth_recs:
+        _live_packet_callback(r)
+
+    # Verify summary updated with is_synthetic=False
+    sum_res = client.get("/api/summary")
+    assert sum_res.status_code == 200
+    s = sum_res.json()
+    assert s["total_queries"] > 0, "Summary should show queries after live callback"
+    assert s["is_synthetic"] is False, "Live data must not be marked synthetic"

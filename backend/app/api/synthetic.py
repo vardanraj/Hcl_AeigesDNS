@@ -1,6 +1,7 @@
 """Synthetic dataset generator API endpoint."""
 
 from fastapi import APIRouter, Depends
+import time
 from backend.app.core.session import verify_session_token
 from backend.app.utils.synthetic_gen import generate_synthetic_dns_records
 from backend.app.analytics.feature_extractor import extract_dns_features
@@ -56,10 +57,15 @@ async def generate_synthetic_traffic(num_records: int = 200, tunnel_ratio: float
         "is_synthetic": True,
     }
 
+    from backend.app.analytics.timeline_helper import build_adaptive_timeline
+    timeline = build_adaptive_timeline(enriched, config)
+
     # Update global analysis store
     analysis_store["records"] = enriched
     analysis_store["incidents"] = [inc.model_dump() for inc in incidents]
     analysis_store["summary"] = summary
+    analysis_store["timeline"] = [t.model_dump() for t in timeline]
+    analysis_store["last_updated"] = time.time()
 
     return {
         "status": "success",

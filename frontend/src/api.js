@@ -167,6 +167,21 @@ export async function getEvaluationMetrics() {
   return res.json();
 }
 
+export async function clearData() {
+  if (!sessionToken) await fetchSessionToken();
+  const res = await fetch(`${API_BASE}/api/data/clear`, {
+    method: "POST",
+    headers: {
+      "X-AegisDNS-Token": sessionToken || "",
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to clear data.");
+  }
+  return res.json();
+}
+
 export function getExportUrl(format = "csv") {
   return `${API_BASE}/api/incidents/export?format=${format}`;
 }

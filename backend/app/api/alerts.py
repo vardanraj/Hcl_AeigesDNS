@@ -6,70 +6,24 @@ from typing import Optional, List, Dict, Any
 import json
 import csv
 import io
+import time
 
 from backend.app.core.session import verify_session_token
-
 from backend.app.api.upload import analysis_store
-from backend.app.utils.synthetic_gen import generate_synthetic_dns_records
-from backend.app.analytics.feature_extractor import extract_dns_features
-from backend.app.analytics.detectors import RuleBasedDetector
-from backend.app.analytics.c2_beacon import C2BeaconDetector
-from backend.app.analytics.exfiltration import ExfiltrationDetector
-from backend.app.analytics.ml_classifier import MLAnomalyClassifier
-from backend.app.analytics.incident_engine import IncidentEngine
-from backend.app.config import get_config
 
 router = APIRouter(prefix="/api", tags=["alerts"])
 
-
-def _ensure_active_dataset():
-    """Ensure analysis store has data; if empty, load synthetic demo dataset."""
-    if not analysis_store["records"]:
-        config = get_config()
-        raw_recs = generate_synthetic_dns_records(num_records=150, tunnel_ratio=0.25)
-        enriched = [extract_dns_features(r) for r in raw_recs]
-
-        rule_detector = RuleBasedDetector(config.thresholds)
-        beacon_detector = C2BeaconDetector(config.thresholds)
-        exfil_detector = ExfiltrationDetector(config.thresholds)
-        ml_classifier = MLAnomalyClassifier()
-
-        rule_alerts = rule_detector.evaluate_batch(enriched)
-        beacon_alerts = beacon_detector.detect_beacons(enriched)
-        exfil_alerts = exfil_detector.detect_exfiltration(enriched)
-        ml_probs = ml_classifier.predict_batch(enriched)
-
-        engine = IncidentEngine(config)
-        incidents = engine.process_records_and_alerts(
-            enriched, rule_alerts, beacon_alerts, exfil_alerts, ml_probs, is_synthetic=True
-        )
-
-        sev_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
-        for inc in incidents:
-            sev_counts[inc.severity] = sev_counts.get(inc.severity, 0) + 1
-
-        total_exfil = sum(a.evidence.get("total_payload_bytes", 0) for a in exfil_alerts)
-        avg_ent = sum(r["entropy"] for r in enriched) / len(enriched) if enriched else 0.0
-
-        summary = {
-            "total_queries": len(enriched),
-            "total_incidents": len(incidents),
-            "severity_breakdown": sev_counts,
-            "total_exfil_bytes": total_exfil,
-            "c2_beacon_count": len(beacon_alerts),
-            "avg_entropy": round(avg_ent, 2),
-            "unique_domains_count": len(set(r["base_domain"] for r in enriched if r["base_domain"])),
-            "unique_src_ips_count": len(set(r["src_ip"] for r in enriched)),
-            "is_synthetic": True,
-        }
-
-        from backend.app.analytics.timeline_helper import build_adaptive_timeline
-        timeline = [t.model_dump() for t in build_adaptive_timeline(enriched, config)]
-
-        analysis_store["records"] = enriched
-        analysis_store["incidents"] = [inc.model_dump() for inc in incidents]
-        analysis_store["summary"] = summary
-        analysis_store["timeline"] = timeline
+_EMPTY_SUMMARY = {
+    "total_queries": 0,
+    "total_incidents": 0,
+    "severity_breakdown": {"Critical": 0, "High": 0, "Medium": 0, "Low": 0},
+    "total_exfil_bytes": 0,
+    "c2_beacon_count": 0,
+    "avg_entropy": 0.0,
+    "unique_domains_count": 0,
+    "unique_src_ips_count": 0,
+    "is_synthetic": False,
+}
 
 
 @router.get("/alerts")
@@ -78,8 +32,10 @@ async def get_alerts(
     domain: Optional[str] = None,
     src_ip: Optional[str] = None,
 ):
-    """Retrieve list of incident alerts with optional filtering."""
-    _ensure_active_dataset()
+    """Retrieve list of incident alerts with optional filtering.
+
+    Returns an empty list when no data has been loaded yet.
+    """
     incidents = analysis_store["incidents"]
 
     filtered = incidents
@@ -95,22 +51,25 @@ async def get_alerts(
 
 @router.get("/summary")
 async def get_summary():
-    """Retrieve aggregate summary statistics."""
-    _ensure_active_dataset()
-    return analysis_store["summary"]
+    """Retrieve aggregate summary statistics.
+
+    Returns zero-state summary when no data has been loaded yet.
+    """
+    return analysis_store["summary"] or _EMPTY_SUMMARY
 
 
 @router.get("/timeline")
 async def get_timeline():
-    """Retrieve time-series chart data."""
-    _ensure_active_dataset()
+    """Retrieve time-series chart data.
+
+    Returns an empty list when no data has been loaded yet.
+    """
     return analysis_store["timeline"]
 
 
 @router.get("/investigate/{domain}")
 async def investigate_domain(domain: str):
     """Retrieve forensic breakdown for a specific root domain."""
-    _ensure_active_dataset()
     records = [r for r in analysis_store["records"] if r.get("base_domain", "").lower() == domain.lower()]
     incidents = [i for i in analysis_store["incidents"] if i.get("base_domain", "").lower() == domain.lower()]
 
@@ -138,7 +97,6 @@ def sanitize_csv_cell(value: Any) -> Any:
 @router.get("/incidents/export", dependencies=[Depends(verify_session_token)])
 async def export_incidents(format: str = Query("json", pattern="^(json|csv)$")):
     """Export incidents in JSON or CSV format for report download."""
-    _ensure_active_dataset()
     incidents = analysis_store["incidents"]
 
     if format == "json":
@@ -173,6 +131,21 @@ async def export_incidents(format: str = Query("json", pattern="^(json|csv)$")):
             media_type="text/csv",
             headers={"Content-Disposition": "attachment; filename=aegisdns_incidents.csv"},
         )
+
+
+@router.post("/data/clear", dependencies=[Depends(verify_session_token)])
+async def clear_data():
+    """Reset the in-memory analysis store to empty state.
+
+    Clears all records, incidents, summary, and timeline data.
+    Does not affect models, config, or evaluation results.
+    """
+    analysis_store["records"] = []
+    analysis_store["incidents"] = []
+    analysis_store["summary"] = None
+    analysis_store["timeline"] = []
+    analysis_store["last_updated"] = 0
+    return {"status": "cleared", "message": "Analysis store reset to empty state."}
 
 
 @router.get("/evaluation")

@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any, Set
 import asyncio
 import json
 import threading
+import time
 
 from backend.app.ingest.live_capture import live_sniffer
 from backend.app.models.schemas import LiveCaptureStatus
@@ -15,10 +16,14 @@ from backend.app.analytics.c2_beacon import C2BeaconDetector
 from backend.app.analytics.exfiltration import ExfiltrationDetector
 from backend.app.analytics.ml_classifier import MLAnomalyClassifier
 from backend.app.analytics.incident_engine import IncidentEngine
+from backend.app.analytics.timeline_helper import build_adaptive_timeline
 from backend.app.config import get_config
 from backend.app.core.session import verify_session_token
+from backend.app.api.upload import analysis_store
 
 router = APIRouter(prefix="/api/capture", tags=["capture"])
+
+MAX_LIVE_RECORDS = 5000
 
 
 # Active WebSocket connections manager
@@ -59,6 +64,41 @@ class StartCaptureRequest(BaseModel):
 live_packet_buffer: List[Dict[str, Any]] = []
 _buffer_lock = threading.Lock()
 
+# Lock protecting writes to analysis_store from the live capture thread
+_store_lock = threading.Lock()
+
+
+def _rebuild_summary_from_store() -> Dict[str, Any]:
+    """Recompute summary statistics from current analysis_store contents.
+
+    Must be called while holding _store_lock.
+    """
+    records = analysis_store["records"]
+    incidents = analysis_store["incidents"]
+
+    sev_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
+    for inc in incidents:
+        sev = inc.get("severity", "Low")
+        sev_counts[sev] = sev_counts.get(sev, 0) + 1
+
+    avg_ent = sum(r.get("entropy", 0.0) for r in records) / len(records) if records else 0.0
+    # total_exfil_bytes is not easily reconstructable from stored incident dicts;
+    # use the sum of exfiltration_score * query_count as a proxy kept at 0 for live data
+    # (exact value is only available at analysis time via exfil_alerts)
+    total_exfil = 0
+
+    return {
+        "total_queries": len(records),
+        "total_incidents": len(incidents),
+        "severity_breakdown": sev_counts,
+        "total_exfil_bytes": total_exfil,
+        "c2_beacon_count": sum(1 for inc in incidents if inc.get("beacon_score", 0.0) > 0.0),
+        "avg_entropy": round(avg_ent, 2),
+        "unique_domains_count": len(set(r.get("base_domain", "") for r in records if r.get("base_domain"))),
+        "unique_src_ips_count": len(set(r.get("src_ip", "") for r in records)),
+        "is_synthetic": False,
+    }
+
 
 def _live_packet_callback(record: Dict[str, Any]):
     """Callback executed for each packet captured by live sniffer."""
@@ -91,6 +131,28 @@ def _live_packet_callback(record: Dict[str, Any]):
         enriched, rule_alerts, beacon_alerts, exfil_alerts, ml_probs, is_synthetic=False
     )
 
+    # --- Persist into analysis_store ---
+    with _store_lock:
+        # Append records, capped at MAX_LIVE_RECORDS (drop oldest)
+        combined = analysis_store["records"] + enriched
+        if len(combined) > MAX_LIVE_RECORDS:
+            combined = combined[-MAX_LIVE_RECORDS:]
+        analysis_store["records"] = combined
+
+        # Merge incidents: update existing by incident_id or append new ones
+        existing_by_id = {inc["incident_id"]: inc for inc in analysis_store["incidents"]}
+        for inc in incidents:
+            inc_dict = inc.model_dump()
+            existing_by_id[inc_dict["incident_id"]] = inc_dict
+        analysis_store["incidents"] = list(existing_by_id.values())
+
+        # Recompute summary and timeline from updated store
+        analysis_store["summary"] = _rebuild_summary_from_store()
+        analysis_store["timeline"] = [
+            t.model_dump() for t in build_adaptive_timeline(analysis_store["records"], config)
+        ]
+        analysis_store["last_updated"] = time.time()
+
     if incidents or rule_alerts:
         payload = {
             "type": "live_incidents",
@@ -114,7 +176,18 @@ def _live_packet_callback(record: Dict[str, Any]):
 
 @router.post("/start", dependencies=[Depends(verify_session_token)])
 async def start_live_capture(req: StartCaptureRequest = StartCaptureRequest()):
-    """Start live network sniffer on port 53 with packet callback for live WebSocket stream."""
+    """Start live network sniffer on port 53 with packet callback for live WebSocket stream.
+
+    Resets analysis_store to empty state before starting so live results
+    never mix with synthetic or PCAP data.
+    """
+    with _store_lock:
+        analysis_store["records"] = []
+        analysis_store["incidents"] = []
+        analysis_store["summary"] = None
+        analysis_store["timeline"] = []
+        analysis_store["last_updated"] = 0
+
     success = live_sniffer.start_capture(interface=req.interface, callback=_live_packet_callback)
     status = live_sniffer.get_status()
     if not success:
